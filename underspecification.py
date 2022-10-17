@@ -6,6 +6,7 @@ from sklearn.preprocessing import MinMaxScaler
 from sklearn.neighbors import NearestNeighbors
 from IPython.display import display, Markdown, Latex
 import sys
+import scipy.stats as stats
 
 import compare_graphs as cg
 
@@ -91,6 +92,20 @@ class UnderspecificationAnalysis:
         sel_data_by_unshifted = sel_data.groupby(['cluster','rep']).apply(lambda group_df: sel_top(group_df,'f1-score (unshifted)'))
         sel_data_by_unshifted['avg f1-score - f1-score (unshifted)'] = sel_data_by_unshifted['avg f1-score']-sel_data_by_unshifted['f1-score (unshifted)']
         self.selected = sel_data_by_unshifted.sort_values(by='avg f1-score - f1-score (unshifted)').iloc[:5]
+        sel_data2 = sel_data.set_index(['cluster','rep']).loc[selected.index].reset_index()
+        unshifted_ranks = get_ranks(selected,sel_data2,'f1-score (unshifted)')
+        unshifted_corr_results = pd.DataFrame(calc_scores(unshifted_ranks,selected,'f1-score (unshifted)') ).T
+        results = cg.compute_score(sel_data2,A,dt)
+        results = results.reset_index().set_index(['cluster','rep'])
+        # STOPPED AT: 
+        #import copy
+        # by = 'combined score and f1-score (unshifted)'
+        # copy_unshifted_ranks = copy.deepcopy(unshifted_ranks)
+        # for cluster,rep in unshifted_ranks.keys():
+
+        
+        
+
 
     # TODO: This needs to be printed out to a downloadeable file. 
     def plot_cluster_performances(self):
@@ -118,6 +133,37 @@ class UnderspecificationAnalysis:
             tooltip=['Seed:Q','rank','avg f1-score','f1-score (unshifted)','f1-score (shifted)']
         )
         chart.resolve_scale(x='independent')
+        chart.save('ranking_results.pdf',scale_factor=2.0)
+        # chart.save('ranking_results.html')
+    
+            
+    # can we imporve the ranking?
+    def get_ranks(selected,sel_data2,by,n = 5,ascending=False):
+    ranks = {}
+    for ix in selected.index:
+        ranks[ix] = sel_data2.set_index(['cluster','rep']).loc[ix].sort_values(by=by,ascending=ascending).iloc[:n]
+    return ranks
+
+    def calc_scores(ranks,selected,by,true_col='avg f1-score',verbose=False):
+        scores = {}
+        for ix in selected.index:
+            scores[ix]={}
+            x1 = ranks[ix][true_col]
+            x2 = ranks[ix][by]
+            tau, p_value = stats.kendalltau(x1, x2)
+            r, p_value = stats.pearsonr(x1, x2)
+            if verbose:
+                x1 = ranks[ix][['seed',true_col]]
+                x2 = ranks[ix][['seed',by]]
+                # print(ix)
+                # print(x1.sort_values(by=true_col))
+                # print(x2.sort_values(by=by))
+                # print(tau)
+            scores[ix]['tau'] = tau
+            scores[ix]['r'] = r
+        return scores
+
+
     
     def shifted_stress_test_analysis(self):
         self.paired_perf_df = self.results.groupby(['rep','seed','subtype','cluster'])[['shifted','f1-score']].apply(process)
