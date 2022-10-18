@@ -33,12 +33,10 @@ class UnderspecificationAnalysis:
         self.results_df['shifted'] = ''
         self.results_df[['cluster','shifted']] = list(self.results_df['key'].str.split(","))
         self.paired_perf_df = self.results_df.groupby(['rep','seed','subtype','cluster'])[['shifted','f1-score']].apply(self.process)
-        self.evaluate_shifted_unshifted
+        self.evaluate_shifted_unshifted()
         
     def load_data(self, data_file, expressions_file, targets_file, sample_sample_graph, encoding_file, data_test_labels_file, num_to_target_file):
-        print(type(self.paired_perf_df))
-        self.paired_perf_df = pd.DataFrame(self.paired_perf_df)
-        sel_data = (self.paired_perf_df).set_index(['subtype','cluster','rep']).loc[[('Her2','2',1),('Her2','2',2)]].reset_index()
+        sel_data = self.paired_perf_df.set_index(['subtype','cluster','rep']).loc[[('Her2','2',1),('Her2','2',2)]].reset_index()
         self.cg = cg.Data(
             self.data_path + "/" + data_file,
             self.data_path + "/" + targets_file,
@@ -67,11 +65,11 @@ class UnderspecificationAnalysis:
         
     def generate_knowledge_graph(self, knowledge, neighbors=5, algorithm='ball_tree', mode='distance'):
         for gene in knowledge:
-            if gene not in self.genes_df.columns:
+            if gene not in list(self.genes_df.columns):
                 raise IndexError("Gene " + str(gene) + " does not exist in the dataset.")
         self.knowledge = knowledge
         hX,hy,hA = self.cg.helper_ret
-        X = self.genes_df[knowledge_genes]
+        X = self.genes_df[self.knowledge]
         yher2 = hy[hy=='Her2']
         Xher2 = X.loc[yher2.index]
         scaler = MinMaxScaler()
@@ -85,17 +83,17 @@ class UnderspecificationAnalysis:
         return group_df.sort_values(by=by,ascending=ascending).iloc[0]
         
     def calculate_and_rank_unshifted(self, num_samples=5):
-        sel_data = df_paired_perf.set_index('subtype').loc['Her2'].reset_index()
+        sel_data = self.paired_perf_df.set_index('subtype').loc['Her2'].reset_index()
         f = sel_data['f1-score (shifted)']
         r = sel_data['f1-score (unshifted)']
         sel_data['avg f1-score'] = ((f+r)/2).values # 2/(1/f+1/r)
-        sel_data_by_unshifted = sel_data.groupby(['cluster','rep']).apply(lambda group_df: sel_top(group_df,'f1-score (unshifted)'))
+        sel_data_by_unshifted = sel_data.groupby(['cluster','rep']).apply(lambda group_df: self.sel_top(group_df,'f1-score (unshifted)'))
         sel_data_by_unshifted['avg f1-score - f1-score (unshifted)'] = sel_data_by_unshifted['avg f1-score']-sel_data_by_unshifted['f1-score (unshifted)']
         self.selected = sel_data_by_unshifted.sort_values(by='avg f1-score - f1-score (unshifted)').iloc[:5]
-        sel_data2 = sel_data.set_index(['cluster','rep']).loc[selected.index].reset_index()
-        unshifted_ranks = get_ranks(selected,sel_data2,'f1-score (unshifted)')
-        unshifted_corr_results = pd.DataFrame(calc_scores(unshifted_ranks,selected,'f1-score (unshifted)') ).T
-        results = cg.compute_score(sel_data2,A,dt)
+        sel_data2 = sel_data.set_index(['cluster','rep']).loc[self.selected.index].reset_index()
+        unshifted_ranks = self.get_ranks(self.selected,sel_data2,'f1-score (unshifted)')
+        unshifted_corr_results = pd.DataFrame(self.calc_scores(unshifted_ranks,self.selected,'f1-score (unshifted)') ).T
+        results = cg.compute_score(sel_data2,self.A,self.cg)
         results = results.reset_index().set_index(['cluster','rep'])
         # STOPPED AT: 
         #import copy
@@ -138,13 +136,13 @@ class UnderspecificationAnalysis:
     
             
     # can we imporve the ranking?
-    def get_ranks(selected,sel_data2,by,n = 5,ascending=False):
-    ranks = {}
-    for ix in selected.index:
-        ranks[ix] = sel_data2.set_index(['cluster','rep']).loc[ix].sort_values(by=by,ascending=ascending).iloc[:n]
-    return ranks
+    def get_ranks(self, selected,sel_data2,by,n = 5,ascending=False):
+        ranks = {}
+        for ix in selected.index:
+            ranks[ix] = sel_data2.set_index(['cluster','rep']).loc[ix].sort_values(by=by,ascending=ascending).iloc[:n]
+        return ranks
 
-    def calc_scores(ranks,selected,by,true_col='avg f1-score',verbose=False):
+    def calc_scores(self, ranks,selected,by,true_col='avg f1-score',verbose=False):
         scores = {}
         for ix in selected.index:
             scores[ix]={}
