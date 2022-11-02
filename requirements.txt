@@ -1,0 +1,14 @@
+numpy
+pandas
+altair
+scipy
+matplotlib
+sklearn
+IPython
+tensorflow
+keras
+pathlib
+argparse
+pickle5
+collections
+operator-courier
