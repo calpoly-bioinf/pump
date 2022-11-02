@@ -4,6 +4,9 @@ Department of Computer Science, California Polytechnic University, San Luis Obis
 
 Department of Biological Sciences, California Polytechnic University, San Luis Obispo,California, USA
 
+## Installation
+pip install -r requirements.txt
+
 ## The Problem
 
 Underspecification is an issue experienced by deep learning networks that describes when a model's training is unable to be accurately applied to datasets beyond the data it was trained on. If a model outputs a high quantity when describing topics like classification accuracy on a specifc dataset, then one would expect it to perform well on another, however this is not always the case and can be problematic, especially when applied to biomedicine.
