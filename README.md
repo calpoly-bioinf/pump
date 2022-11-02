@@ -21,10 +21,6 @@ The use-case utilized was a transcriptomic METABRIC dataset with 19,084 gene exp
 
 This dataset has more features than samples. This is a characteristic of many datasets at risk of underspecification.
 
-Find this data set here:
-
-`brca_metabric_clinical_data.tsv`
-
 ## Code
 1. `underspecification.py`: contains class UnderspecificationAnalysis that handles data preprocessing and analysis.
 2. `pipeline.ipynb`: Notebook for user to iteratively setup and track progress of underspecifaction analysis on desired data that meets format needs.
