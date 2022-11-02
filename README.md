@@ -22,10 +22,9 @@ Find this data set here:
 
 `brca_metabric_clinical_data.tsv`
 
-## Code Flow
-1. `setup.py`: this python file will install and import any necessary libraries.
-2. `underspecification.py`: contains class UnderspecificationAnalysis that handles data preprocessing and analysis.
-3. `pipeline.ipynb`: Notebook for user to iteratively setup and track progress of underspecifaction analysis on desired data that meets format needs.
+## Code
+1. `underspecification.py`: contains class UnderspecificationAnalysis that handles data preprocessing and analysis.
+2. `pipeline.ipynb`: Notebook for user to iteratively setup and track progress of underspecifaction analysis on desired data that meets format needs.
 
 In addition to code files, this repository also includes results images, libraries like pydeep2 which are used for analysis, and some source data. 
 
