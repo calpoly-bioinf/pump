@@ -14,8 +14,52 @@ from IPython.display import display, Markdown, Latex
 import random
 import sys
 import os
+from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.metrics import silhouette_samples, silhouette_score
 
 from . import compare_graphs as cg
+
+class ClassFocusTransformer(BaseEstimator, TransformerMixin):
+    """Transformer designed to focus on a single class"""
+    def __init__(self,cluster_focus=None):
+        self._cluster_focus = cluster_focus
+    
+    def fit(self, X, y):
+        if self._cluster_focus not in y.unique():
+            raise ValueError("Cluster focus " + str(self._cluster_focus) + " must be a class in y.")
+        return self
+    
+    def transform(self, X, y):
+        X = X.loc[y == self._cluster_focus]
+        y = y.loc[y == self._cluster_focus]
+        return X,y
+
+class GenerateByKMeans:
+    """Class to generate datasets in ways to test for underspecification"""
+    def __init__(self,range_n_clusters=[2,3],random_state=42):
+        self._range_n_clusters = range_n_clusters
+        self._random_state=random_state
+        
+    def fit(self,X,y):
+        self._clusterer_dict = {}
+        self._cluster_labels_dict = {}
+        self._silhouette_avgs_dict = {} 
+        for n_clusters in self._range_n_clusters:
+            # Initialize the clusterer with n_clusters value and a random generator
+            # seed for reproducibility.
+            self._clusterer_dict[n_clusters] = KMeans(n_clusters=n_clusters, random_state=self._random_state)
+            self._cluster_labels_dict[n_clusters] = self._clusterer_dict[n_clusters].fit_predict(X)
+
+            # The silhouette_score gives the average value for all the samples.
+            # This gives a perspective into the density and separation of the formed
+            # clusters
+            self._silhouette_avgs_dict[n_clusters] = silhouette_score(X, self._cluster_labels_dict[n_clusters])
+            
+        self._best_n_clusters = pd.Series(self._silhouette_avgs_dict).idxmax()
+        return self
+    
+    def cluster_labels(self):
+        return self._cluster_labels_dict[self._best_n_clusters]
 
 
 class PUMP:
