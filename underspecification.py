@@ -236,52 +236,58 @@ class PUMP:
                 index_df = curr
                 index_df.to_csv(self.output_dir + f"{subdirectory}/{key_str}/index_df_{j}.csv",index=True)
     
-    def create_shifted_datasets(self, X, y, Xy_filtered, cluster_focus, num_clusters=3, shift_type='clustering', subdirectory='indices', num_shifted_sets=50, split_ratio=[0.7, 0.1, 0.2]):
+    def create_shifted_datasets(self, Xy_filtered, cluster_focus, num_clusters=3, shift_type='clustering', subdirectory='indices', num_shifted_sets=50, split_ratio=[0.7, 0.1, 0.2]):
+        """
+        Creates shifted datasets.
+
+        TODO: Better documentation. Not 100% sure about all the args...
+        TODO: List[TransformerMixin] or our own AnalysisTransformer class as stated previously.
+        """
         if not os.path.exists(self.output_dir + subdirectory):
             os.makedirs(self.output_dir + subdirectory)
         sets_by_group = {}
         df_filtered = Xy_filtered
-        df = X.join(y).dropna()
+        df = self._X.join(self._y).dropna()
         if shift_type != 'clustering':
             raise ValueError('Non-clustering shifting methods are not yet available. Please select \'clustering\' for shift type')
-        if cluster_focus not in y.unique():
-            raise ValueError("Cluster focus " + str(cluster_focus) + " must be a class in y.")
         print("Creating shifted sets ...")
+        # TODO: This could be problematic... float rounding errors?
         if sum(split_ratio) != 1:
             raise ValueError("Split Ratio must total up to 1 exactly")
 
         for cluster in range(num_clusters): # clusters selected from colors above
-            if type(cluster) != list:
-                cluster = [cluster]
-
-            shifted_set = []
-            for c in cluster:
-                shifted_set.extend(list(df_filtered[df_filtered['kmean-label'] == c].index.values))
+            shifted_set = list(df_filtered[df_filtered['kmean-label'] == cluster].index.values)
 
             for shifted in [True,False]:
                 sets = []
-                sets_by_group[tuple(cluster+[shifted])] = sets
+                sets_by_group[cluster, shifted] = sets
                 for i in range(num_shifted_sets):
-                    frac_in_shifted_set = len(shifted_set)/len(df_filtered)
                     test_size = round(len(df)*split_ratio[2])
                     val_size = round(len(df)*split_ratio[1])
-                    train_size = len(df) - test_size - val_size
 
-                    df_not_class = df[df[y.name] != cluster_focus]
+                    df_not_class = df[df[self._y.name] != cluster_focus]
 
                     random.seed(i)
-                    test_list = list(df_not_class.index[random.sample(range(0, len(df_not_class)), test_size-len(shifted_set))])
+                    test_list = list(
+                        df_not_class.index[
+                            random.sample(
+                                range(len(df_not_class)),
+                                test_size - len(shifted_set),
+                            )
+                        ]
+                    )
 
                     df_dropped = df_filtered.drop(shifted_set)
                     if len(shifted_set) > len(df_dropped):
                         shifted_set = random.sample(shifted_set, len(df_dropped))
-                    reg_set = list(df_dropped.index[random.sample(range(0, len(df_dropped)), len(shifted_set))]) 
+                    reg_set = list(
+                        df_dropped.index[
+                            random.sample(range(len(df_dropped)), len(shifted_set))
+                        ]
+                    )
                     remaining_set = df.drop(shifted_set).drop(reg_set).drop(test_list).index
-                    if shifted:
-                        test_list += shifted_set
-                    else:
-                        test_list += reg_set 
-                    val_list = remaining_set[random.sample(range(0, len(remaining_set)), val_size)]
+                    test_list += shifted_set if shifted else reg_set
+                    val_list = remaining_set[random.sample(range(len(remaining_set)), val_size)]
                     train_list = list(set(remaining_set) - set(val_list))
 
                     curr = pd.DataFrame(index=df.index,columns=["train", "test", "val"])
