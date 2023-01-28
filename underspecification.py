@@ -12,7 +12,6 @@ import os
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.metrics import silhouette_score
 
-
 class ClassFocusTransformer(BaseEstimator, TransformerMixin):
     """Transformer designed to focus on a single class"""
     def __init__(self,cluster_focus=None):
@@ -59,31 +58,45 @@ class GenerateByKMeans:
 
 
 class PUMP:
-    
-    def __init__(self, output_dir="data"):
+    """
+    Main PUMP analysis class
+
+    Attributes
+    ----------
+    X : pandas.DataFrame
+        The input data to be analyzed. Must be a pandas DataFrame with the same
+        number of rows as y.
+    y : pandas.DataFrame
+        The output data to be analyzed. Must be a pandas DataFrame with the same
+        number of rows as X and a single column.
+    output_dir : str
+        The directory to save the output files to. Defaults to "data".
+        If the directory does not exist, it will be created.
+        NOTE: You should define a different output directory for each analysis.
+    """
+    def __init__(self, X, y, output_dir="data"):
         if output_dir[-1] != "/":
             output_dir = output_dir + "/" 
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
-        self.output_dir = output_dir
-        
-    def initialize(self, X, y, num_clusters, cluster_focus, num_shifted_sets, random_state):
+
+        # ---- Initialize Data ----
         if X.shape[0] != y.shape[0]:
             raise IndexError("X and y sets must have an equal number of samples.")
-        if cluster_focus not in y.unique():
-            raise ValueError("Cluster focus " + str(cluster_focus) + " must be a class in y.")
-        self.Xy = X.join(y).dropna()
-        self.X = self.Xy.drop(['Pam50 + Claudin-low subtype'], axis=1)
-        self.y = self.Xy['Pam50 + Claudin-low subtype']
-        self.num_clusters = num_clusters
-        self.cluster_focus = cluster_focus
-        self.num_shifted_sets = num_shifted_sets
-        self.random_state = random_state
+        self._X = X
+        self._y = y
+        self._Xy = X.join(y).dropna()
+        self.output_dir = output_dir
+
+    def analyze(self, num_clusters=3, num_shifted_sets=50, random_state=0):
+        raise NotImplementedError("Full analysis not yet implemented.")
         
-    def pca_analysis(self, X, y, subdirectory):
-        
+    def pca_analysis(self):
+        """
+        Creates PCA plots of the data in output_dir/analysis
+        """
         # Standardize the data to have a mean of ~0 and a variance of 1
-        X_std = StandardScaler().fit_transform(X)
+        X_std = StandardScaler().fit_transform(self._X)
         pca = PCA(n_components=20)
         principalComponents = pca.fit_transform(X_std)
         
@@ -93,77 +106,81 @@ class PUMP:
         plt.xlabel('PCA features')
         plt.ylabel('variance %')
         plt.xticks(features)
-        pca_components = pd.DataFrame(principalComponents,index=y.index)
+        pca_components = pd.DataFrame(principalComponents,index=self._y.index)
         plt.title("Variance Drop Off after 0,1,2,...")
-        plt.savefig(self.output_dir + subdirectory + '/pca_bar.png')
+        plt.savefig(self.output_dir + 'analysis/pca_bar.png')
         plt.clf()
         
         # PCA Scatter Plot
         plt.scatter(pca_components[0], pca_components[1], alpha=.1, color='black')
         plt.xlabel('PCA 1')
         plt.ylabel('PCA 2')
-        plt.savefig(self.output_dir + subdirectory + '/pca_scatter.png')
+        plt.savefig(self.output_dir + 'analysis/pca_scatter.png')
         plt.clf()
         
         return pca_components
     
-    def kmeans_analysis(self, X, y, num_clusters, subdirectory):
-        
-        Xy = X.join(y)
+    def kmeans_analysis(self, num_clusters):
+        """Performs k-means clustering on the data and saves the results to output_dir/analysis"""
+        Xy = self._X.join(self._y)
         
         # Plot k-means inertia
         ks = range(1, 10)
         inertias = []
         for k in ks:
             model = KMeans(n_clusters=k)
-            model.fit(X)
+            model.fit(self._X)
             inertias.append(model.inertia_)
         plt.plot(ks, inertias, '-o', color='black')
         plt.xlabel('number of clusters, k')
         plt.ylabel('inertia')
         plt.xticks(ks)
-        plt.savefig(self.output_dir + subdirectory + '/kmeans_inertia.png')
+        plt.savefig(self.output_dir + 'analysis/kmeans_inertia.png')
         plt.clf()
         
         # Plot user-specified k-means
         model = KMeans(n_clusters=num_clusters)
-        model.fit(X)
+        model.fit(self._X)
         Xy['kmean-label'] = model.labels_
         kplt = Xy['kmean-label'].value_counts().loc[list(range(num_clusters))].plot.barh()
-        kplt.figure.savefig(self.output_dir + subdirectory + '/kmeans.png')
+        kplt.figure.savefig(self.output_dir + 'analysis/kmeans.png')
         
         return Xy
         
-    def plot_cluster_analysis(self, X, y, Xy, pca_components, subdirectory):
+    def plot_cluster_analysis(self, Xy, pca_components):
+        """
+        Plots cluster analysis in output_dir/analysis/clusters.html
+        
+        TODO: Change Xy to something more descriptive
+        """
         data = pca_components.copy()
-        data.columns = ["PC"+str(c+1) for c in data.columns]
+        data.columns = [f"PC{str(c + 1)}" for c in data.columns]
         data['cluster'] = Xy['kmean-label']
-        data_subtype = data.copy()
         chart = alt.Chart(data).mark_circle(size=60).encode(
             x="PC1",
             y="PC2",
             color='cluster:N',
         )
-        chart.save(self.output_dir + subdirectory + '/clusters.html')
+        chart.save(self.output_dir + 'analysis/clusters.html')
         
-    def analyze_dataset(self, X, y, methods=['clustering'], cluster_focus=None, subdirectory='analysis', num_clusters=3):
-        for method in methods:
-            if method not in ['clustering']:
-                raise ValueError("Method " + method + " is not included in package methods")
-        if not os.path.exists(self.output_dir + subdirectory):
-            os.makedirs(self.output_dir + subdirectory)
-        if cluster_focus is not None:
-            if cluster_focus not in y.unique():
-                raise ValueError("Cluster focus " + str(cluster_focus) + " must be a class in y.")
-            X = X.loc[y == cluster_focus]
-            y = y.loc[y == cluster_focus]
+    def analyze_dataset(self, num_clusters=3): 
+        """
+        Analyzes the dataset using the specified methods and saves the results to output_dir/analysis
+
+        Parameters
+        ----------
+        num_clusters : int (default=3)
+            The number of clusters to use for k-means clustering.
+        """
+        if not os.path.exists(self.output_dir + "analysis"):
+            os.makedirs(self.output_dir + "analysis")
         print("Running PCA Analysis ...")
-        pca_components = self.pca_analysis(X, y, subdirectory)
+        pca_components = self.pca_analysis()
         print("Running K-means Analysis ...")
-        Xy = self.kmeans_analysis(X, y, num_clusters, subdirectory)
+        Xy = self.kmeans_analysis(num_clusters)
         print("Writing Cluster Analysis ...")
-        self.plot_cluster_analysis(X, y, Xy, pca_components, subdirectory)
-        print(f"-----[ COMPLETE ]-----\nCheck /{self.output_dir}{subdirectory} for the results.")
+        self.plot_cluster_analysis(Xy, pca_components)
+        print(f"-----[ COMPLETE ]-----\nCheck /{self.output_dir}analysis for the results.")
         return Xy
     
     def initialize_shifted_directory(self, directory):
@@ -328,19 +345,6 @@ class PUMP:
             nn_results.reset_index(drop=True)
             nn_results.to_csv(self.output_dir + f"{subdirectory}/nn_results.csv")
         print(f"-----[ COMPLETE ]-----\nCheck /{self.output_dir}{subdirectory} for the results.")
-        
-    def analyze(self, X, y, num_clusters=3, cluster_focus=None, num_shifted_sets=50, random_state=0):
-        print("[ 10% ] Initializing data ...")
-        self.initialize(X, y, num_clusters, cluster_focus, num_shifted_sets, random_state)
-        print("[ 20% ] Analyzing data ...")
-        # Xy = self.analyze_data()
-        print("[ 30% ] Creating shifted datasets ...")
-        # self.create_shifted_datasets(Xy)
-        print("[ 50% ] Evaluating shifted performances ...")
-        self.evaluate_shifted_performances(random_state)
-        print("[ 90% ] Analyzing for underspecification ...")
-        # self.write_analysis()
-        print(" ----- [ ANALYSIS COMPLETE ] -----")
         
     def process(self, df):
         df = df.set_index('shifted')
