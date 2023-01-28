@@ -1,23 +1,17 @@
-import numpy as np
 import pandas as pd
 import altair as alt
 import scipy.stats as stats
-import scipy.io
 import matplotlib.pyplot as plt
-from sklearn.preprocessing import MinMaxScaler, StandardScaler
-from sklearn.neighbors import NearestNeighbors
+from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
-from sklearn.metrics import confusion_matrix, classification_report
+from sklearn.metrics import classification_report
 from sklearn.cluster import KMeans
 from sklearn import svm, ensemble, neural_network 
-from IPython.display import display, Markdown, Latex
 import random
-import sys
 import os
 from sklearn.base import BaseEstimator, TransformerMixin
-from sklearn.metrics import silhouette_samples, silhouette_score
+from sklearn.metrics import silhouette_score
 
-from . import compare_graphs as cg
 
 class ClassFocusTransformer(BaseEstimator, TransformerMixin):
     """Transformer designed to focus on a single class"""
@@ -26,7 +20,9 @@ class ClassFocusTransformer(BaseEstimator, TransformerMixin):
     
     def fit(self, X, y):
         if self._cluster_focus not in y.unique():
-            raise ValueError("Cluster focus " + str(self._cluster_focus) + " must be a class in y.")
+            raise ValueError(
+                f"Cluster focus {str(self._cluster_focus)} must be a class in y."
+            )
         return self
     
     def transform(self, X, y):
