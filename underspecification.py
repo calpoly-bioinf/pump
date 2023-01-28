@@ -1,3 +1,4 @@
+from typing import Union
 import pandas as pd
 import altair as alt
 import scipy.stats as stats
@@ -29,6 +30,10 @@ class ClassFocusTransformer(BaseEstimator, TransformerMixin):
         y = y.loc[y == self._cluster_focus]
         return X,y
 
+    def fit_transform(self, X, y):
+        self.fit(X,y)
+        return self.transform(X,y)
+
 class GenerateByKMeans:
     """Class to generate datasets in ways to test for underspecification"""
     def __init__(self,range_n_clusters=[2,3],random_state=42):
@@ -55,7 +60,6 @@ class GenerateByKMeans:
     
     def cluster_labels(self):
         return self._cluster_labels_dict[self._best_n_clusters]
-
 
 class PUMP:
     """
@@ -88,15 +92,25 @@ class PUMP:
         self._Xy = X.join(y).dropna()
         self.output_dir = output_dir
 
-    def analyze(self, num_clusters=3, num_shifted_sets=50, random_state=0):
+    def analyze(self, cluster_focus=None, num_clusters=3, num_shifted_sets=50, random_state=0):
+        # TODO: This should not take cluster_focus as an arg if we want this to be general...
+        # I suggest taking a List[TransformerMixin] as an arg instead. All transformers are analyzed then.
         raise NotImplementedError("Full analysis not yet implemented.")
         
-    def pca_analysis(self):
+    def pca_analysis(self, transformed_x, transformed_y):
         """
         Creates PCA plots of the data in output_dir/analysis
+
+        TODO: I removed subdirectory because (for now at least) it makes more sense to basically pre-define
+        the output subdirectory given that we are only doing one analysis at a time. If we do multiple
+        analyses at a time, we should probably make this a private method that takes a name parameter
+        (i.e. "cluster_focus_1") that is used as a subdirectory.
+
+        In general though, this should probably be rethought (it hurts my brain a little bit)
         """
         # Standardize the data to have a mean of ~0 and a variance of 1
-        X_std = StandardScaler().fit_transform(self._X)
+        # TODO: This should probably be done beforehand (i.e. pass in an already standardized X)
+        X_std = StandardScaler().fit_transform(transformed_x)
         pca = PCA(n_components=20)
         principalComponents = pca.fit_transform(X_std)
         
@@ -106,7 +120,7 @@ class PUMP:
         plt.xlabel('PCA features')
         plt.ylabel('variance %')
         plt.xticks(features)
-        pca_components = pd.DataFrame(principalComponents,index=self._y.index)
+        pca_components = pd.DataFrame(principalComponents,index=transformed_y.index)
         plt.title("Variance Drop Off after 0,1,2,...")
         plt.savefig(self.output_dir + 'analysis/pca_bar.png')
         plt.clf()
@@ -120,16 +134,16 @@ class PUMP:
         
         return pca_components
     
-    def kmeans_analysis(self, num_clusters):
+    def kmeans_analysis(self, transformed_x, transformed_y, num_clusters):
         """Performs k-means clustering on the data and saves the results to output_dir/analysis"""
-        Xy = self._X.join(self._y)
+        Xy = transformed_x.join(transformed_y)
         
         # Plot k-means inertia
         ks = range(1, 10)
         inertias = []
         for k in ks:
             model = KMeans(n_clusters=k)
-            model.fit(self._X)
+            model.fit(transformed_x)
             inertias.append(model.inertia_)
         plt.plot(ks, inertias, '-o', color='black')
         plt.xlabel('number of clusters, k')
@@ -140,7 +154,7 @@ class PUMP:
         
         # Plot user-specified k-means
         model = KMeans(n_clusters=num_clusters)
-        model.fit(self._X)
+        model.fit(transformed_x)
         Xy['kmean-label'] = model.labels_
         kplt = Xy['kmean-label'].value_counts().loc[list(range(num_clusters))].plot.barh()
         kplt.figure.savefig(self.output_dir + 'analysis/kmeans.png')
@@ -163,21 +177,43 @@ class PUMP:
         )
         chart.save(self.output_dir + 'analysis/clusters.html')
         
-    def analyze_dataset(self, num_clusters=3): 
+    def analyze_dataset(self, cluster_focus:Union[str, None]=None, num_clusters:int=3): 
         """
         Analyzes the dataset using the specified methods and saves the results to output_dir/analysis
 
         Parameters
         ----------
+        cluster_focus : str (default=None)
+            The name of the cluster to focus on. If None, all clusters will be analyzed.
         num_clusters : int (default=3)
             The number of clusters to use for k-means clustering.
+
+        TODO: It is awfully difficult to use this in a non-clustering manner (even prior to my changes); 
+        we really need to sit down and decide exactly what we want to do with this.
+        As stated in analysis, I propose passing a List[TransformerMixin] as an arg instead.
+        We may also want to create a custom Transformer class that extends TransformerMixin but has an
+        extra name parameter to be able to easily create subdirectories, i.e.:
+
+        class AnalysisTransformer(TransformerMixin):
+            def __init__(self, name:str, transformer:TransformerMixin):
+                self.name = name
+                self.transformer = transformer
+
+            ...
+
+
+        NOTE: I removed the methods parameter. Again, we should probably be using a List[TransformerMixin].
+        Y'all can add this back if you want but for now its just unecessary clutter.
         """
         if not os.path.exists(self.output_dir + "analysis"):
             os.makedirs(self.output_dir + "analysis")
+        X, y = self._X.copy(), self._y.copy()
+        if cluster_focus is not None:
+            X, y = ClassFocusTransformer(cluster_focus).fit_transform(X, y)
         print("Running PCA Analysis ...")
-        pca_components = self.pca_analysis()
+        pca_components = self.pca_analysis(X, y)
         print("Running K-means Analysis ...")
-        Xy = self.kmeans_analysis(num_clusters)
+        Xy = self.kmeans_analysis(X, y, num_clusters)
         print("Writing Cluster Analysis ...")
         self.plot_cluster_analysis(Xy, pca_components)
         print(f"-----[ COMPLETE ]-----\nCheck /{self.output_dir}analysis for the results.")
