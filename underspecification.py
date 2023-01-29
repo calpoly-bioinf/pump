@@ -1,18 +1,16 @@
 from typing import List, Union
 import pandas as pd
 import altair as alt
+from .analysis import PUMPDefaultAnalysis
 import scipy.stats as stats
 import matplotlib.pyplot as plt
-from sklearn.preprocessing import StandardScaler
-from sklearn.decomposition import PCA
 from sklearn.metrics import classification_report
-from sklearn.cluster import KMeans
+from sklearn.base import TransformerMixin
 from sklearn import svm, ensemble, neural_network 
 import random
 import os
+from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
-from .transformers.analysis_transformer import AnalysisTransformer
-from .transformers.null_transformer import NullTransformer
 
 class GenerateByKMeans:
     """Class to generate datasets in ways to test for underspecification"""
@@ -83,150 +81,33 @@ class PUMP:
         self.output_dir = output_dir
 
     def analyze(self, cluster_focus=None, num_clusters=3, num_shifted_sets=50, random_state=0):
-        # TODO: This should not take cluster_focus as an arg if we want this to be general...
-        # I suggest taking a List[TransformerMixin] as an arg instead. All transformers are analyzed then.
+        # TODO: Figure out how to make this more general...
         raise NotImplementedError("Full analysis not yet implemented.")
         
-    def pca_analysis(self, transformed_x, transformed_y, analysis_name):
-        """
-        Creates PCA plots of the data in output_dir/{analysis_name}/analysis
-
-        Args:
-        ----------
-            transformed_x (pandas.DataFrame): The transformed X data
-            transformed_y (pandas.DataFrame): The transformed y data
-            analysis_name (str): The name of the analysis
-
-        Returns:
-        ----------
-            pca_components (pandas.DataFrame): The PCA components
-        """
-        # Standardize the data to have a mean of ~0 and a variance of 1
-        # TODO: This should probably be done beforehand (i.e. pass in an already standardized X)
-        X_std = StandardScaler().fit_transform(transformed_x)
-        pca = PCA(n_components=20)
-        principalComponents = pca.fit_transform(X_std)
-        
-        # PCA Variance Plot
-        features = range(pca.n_components_)
-        plt.bar(features, pca.explained_variance_ratio_, color='black')
-        plt.xlabel('PCA features')
-        plt.ylabel('variance %')
-        plt.xticks(features)
-        pca_components = pd.DataFrame(principalComponents,index=transformed_y.index)
-        plt.title("Variance Drop Off after 0,1,2,...")
-        plt.savefig(self.output_dir + f'{analysis_name}/analysis/pca_bar.png')
-        plt.clf()
-        
-        # PCA Scatter Plot
-        plt.scatter(pca_components[0], pca_components[1], alpha=.1, color='black')
-        plt.xlabel('PCA 1')
-        plt.ylabel('PCA 2')
-        plt.savefig(self.output_dir + f'{analysis_name}/analysis/pca_scatter.png')
-        plt.clf()
-        
-        return pca_components
-    
-    def kmeans_analysis(self, transformed_x, transformed_y, num_clusters, analysis_name):
-        """
-        Creates k-means plots of the data in output_dir/{analysis_name}/analysis
-
-        Args:
-        ----------
-            transformed_x (pandas.DataFrame): The transformed X data
-            transformed_y (pandas.DataFrame): The transformed y data
-            num_clusters (int): The number of clusters to use
-            analysis_name (str): The name of the analysis
-
-        Returns:
-        ----------
-            Xy: Joined cols of X and y along w/ kmeans cluster labels
-        """
-
-        Xy = transformed_x.join(transformed_y)
-        
-        # Plot k-means inertia
-        ks = range(1, 10)
-        inertias = []
-        for k in ks:
-            model = KMeans(n_clusters=k)
-            model.fit(transformed_x)
-            inertias.append(model.inertia_)
-        plt.plot(ks, inertias, '-o', color='black')
-        plt.xlabel('number of clusters, k')
-        plt.ylabel('inertia')
-        plt.xticks(ks)
-        plt.savefig(self.output_dir + f'{analysis_name}/analysis/kmeans_inertia.png')
-        plt.clf()
-        
-        # Plot user-specified k-means
-        model = KMeans(n_clusters=num_clusters)
-        model.fit(transformed_x)
-        Xy['kmean-label'] = model.labels_
-        kplt = Xy['kmean-label'].value_counts().loc[list(range(num_clusters))].plot.barh()
-        kplt.figure.savefig(self.output_dir + f'{analysis_name}/analysis/kmeans.png')
-        
-        return Xy
-        
-    def plot_cluster_analysis(self, Xy, pca_components, analysis_name):
-        """
-        Plots cluster analysis in output_dir/{analysis_name}/analysis/clusters.html
-        
-        Args:
-        ----------
-            Xy (pandas.DataFrame): Joined cols of X and y along w/ kmeans cluster labels
-            pca_components (pandas.DataFrame): The PCA components
-            analysis_name (str): The name of the analysis
-
-        TODO: Change Xy to something more descriptive
-        """
-        data = pca_components.copy()
-        data.columns = [f"PC{str(c + 1)}" for c in data.columns]
-        data['cluster'] = Xy['kmean-label']
-        chart = alt.Chart(data).mark_circle(size=60).encode(
-            x="PC1",
-            y="PC2",
-            color='cluster:N',
-        )
-        chart.save(self.output_dir + f'{analysis_name}/analysis/clusters.html')
-        
-    def analyze_dataset(self, transformers: List[AnalysisTransformer]=None, num_clusters:int=3):
+    def analyze_dataset(self, analysis_name, transformers: List[TransformerMixin]=None, num_clusters=3):
         """
         Analyzes the dataset using the specified methods and saves the results to output_dir/{analysis_name}/analysis
 
         Parameters
         ----------
-        transformers : List[AnalysisTransformer] (default=None; will use [NullTransformer] w/ name "analysis_0")
-            The transformers to use for analysis (each transformer passed will create a different analysis)
-        num_clusters : int (default=3)
-            The number of clusters to use for k-means clustering.
+        analysis_name : str
+            The name of the analysis to be performed. This will be used to name the output directory.
+        transformers : List[TransformerMixin]
+            A list of transformers to be applied to the dataset. If None, the dataset will not be transformed.
+        num_clusters : int
+            The number of clusters to use for the k-means analysis. Defaults to 3.
 
         Returns
         -------
-        kmeans_transformed_results : Dict[str, pandas.DataFrame]
-            A dictionary of the kmeans transformed results for each analysis.
-            TODO: This probably shouldn't be returned at all... seems odd
+        results : dict
+            A dictionary of the results of the analysis. This will be in the form of the output of
+            the PUMPDefaultAnalysis.run method.
         """
-        # Store kmeans transformed results for each analysis
-        kmeans_transformed_results = {}
-        # Create a null transformer if none are specified
-        transformers = transformers or [NullTransformer("analysis_0")]
-        for transformer in transformers:
-            if not os.path.exists(self.output_dir + f'{transformer.get_name()}/analysis'):
-                os.makedirs(self.output_dir + f'{transformer.get_name()}/analysis')
-            X, y = self._X.copy(), self._y.copy()
-            X, y = transformer.fit_transform(X, y)
-            print(f"-----[ {transformer.get_name()} ]-----")
-            print("Running PCA Analysis ...")
-            pca_components = self.pca_analysis(X, y, transformer.get_name())
-            print("Running K-means Analysis ...")
-            Xy = self.kmeans_analysis(X, y, num_clusters, transformer.get_name())
-            print("Writing Cluster Analysis ...")
-            self.plot_cluster_analysis(Xy, pca_components, transformer.get_name())
-            kmeans_transformed_results[transformer.get_name()] = Xy
-            print(f"-----[ {transformer.get_name()} COMPLETE ]-----")
-        print(f"-----[ COMPLETE ]-----\nCheck /{self.output_dir} for the results.")
-        return kmeans_transformed_results
+        X, y = self._X.copy(), self._y.copy()
+        analysis = PUMPDefaultAnalysis(X, y, analysis_name, self.output_dir, transformers=transformers, num_clusters=num_clusters)
+        results = analysis.run()
+        print(f"-----[ COMPLETE ]-----\nCheck /{self.output_dir}{analysis_name} for the results.")
+        return results
     
     def initialize_shifted_directory(self, directory):
         if not os.path.exists(self.output_dir + "indices/" + str(directory)):
